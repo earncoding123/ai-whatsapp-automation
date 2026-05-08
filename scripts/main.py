@@ -40,23 +40,21 @@ class AutomationOrchestrator:
             os.makedirs(self.data_dir)
     
     def step_1_scrape_trends(self):
-        """
-        STEP 1: Scrape trending topics from Reddit and Google
-        """
-        print("="*60)
-        print("STEP 1: SCRAPING TRENDING TOPICS")
-        print("="*60 + "\n")
-        
-        # Scrape Reddit
-        print("📡 Scraping Reddit...")
-        reddit_summary, reddit_data = self.reddit.get_trending_summary()
-        
-        # Scrape Google Trends
-        print("📡 Scraping Google Trends...")
-        google_summary, google_data = self.google_trends.get_comprehensive_trends()
-        
-        # Combine summaries
-        combined_summary = f"{reddit_summary}\n\n{google_summary}"
+    # Scrape Google Trends only
+    print("📡 Scraping Google Trends...")
+    google_summary, google_data = self.google_trends.get_comprehensive_trends()
+    
+    combined_summary = google_summary
+    trends_data = {
+        'google': google_data,
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    with open(f'{self.data_dir}/trends_data.json', 'w') as f:
+        json.dump(trends_data, f, indent=2)
+    
+    print("\n✅ Trend scraping complete!\n")
+    return combined_summary, trends_data
         
         # Save data
         trends_data = {
