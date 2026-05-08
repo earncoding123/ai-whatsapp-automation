@@ -15,7 +15,7 @@ from scripts.ai.reference_analyzer import ReferenceAnalyzer
 class GeminiContentGenerator:
     def __init__(self, reference_image_path='assets/reference_face.png'):
         genai.configure(api_key=GEMINI_API_KEY)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = genai.GenerativeModel('gemini-2.0-flash')
         
         # Load reference characteristics
         self.ref_analyzer = ReferenceAnalyzer(reference_image_path)
