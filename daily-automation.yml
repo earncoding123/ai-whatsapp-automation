@@ -1,0 +1,74 @@
+name: Daily AI WhatsApp Channel Automation
+
+on:
+  schedule:
+    # Runs daily at 8:00 AM UTC (adjust to your timezone)
+    - cron: '0 8 * * *'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  generate-and-post:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Create data directory
+        run: mkdir -p data output
+      
+      - name: Run trend scraping and content generation
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          WHAPI_TOKEN: ${{ secrets.WHAPI_TOKEN }}
+          WHAPI_CHANNEL_ID: ${{ secrets.WHAPI_CHANNEL_ID }}
+        run: |
+          python scripts/main.py
+      
+      - name: Upload Kaggle input as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: kaggle-input
+          path: data/kaggle_input.json
+      
+      - name: Trigger Kaggle notebook
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          # This is a placeholder
+          # In production, you'd use Kaggle API to trigger the notebook
+          # For now, Kaggle notebook should poll for this file
+          echo "Kaggle input prepared. Waiting for image generation..."
+      
+      - name: Wait for Kaggle (placeholder)
+        run: |
+          # In production, implement polling or webhook
+          # For now, this is a manual step
+          echo "Manual step: Run Kaggle notebook to generate image"
+      
+      - name: Save workflow state
+        uses: actions/upload-artifact@v3
+        with:
+          name: pipeline-state
+          path: data/pipeline_state.json
+
+# NOTE: The actual image upload and WhatsApp posting happens
+# in a separate workflow or manual trigger after Kaggle generates the image
