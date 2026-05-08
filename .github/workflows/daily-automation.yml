@@ -35,6 +35,7 @@ jobs:
           WHAPI_CHANNEL_ID: ${{ secrets.WHAPI_CHANNEL_ID }}
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GITHUB_REPO_NAME: ai-whatsapp-automation
         run: |
           python scripts/main.py
