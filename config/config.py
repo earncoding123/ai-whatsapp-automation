@@ -13,7 +13,7 @@ load_dotenv()
 # ==============================================
 
 # Gemini AI
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 # Whapi WhatsApp API
 WHAPI_TOKEN = os.getenv("WHAPI_TOKEN", "")
