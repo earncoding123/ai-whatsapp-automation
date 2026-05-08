@@ -11,12 +11,20 @@ from datetime import datetime
 
 class FirebaseManager:
     def __init__(self):
-        self.project_id = os.getenv("FIREBASE_PROJECT_ID", "")
-        self.database_url = os.getenv("FIREBASE_DATABASE_URL", "").rstrip("/")
-        self.client_email = os.getenv("FIREBASE_CLIENT_EMAIL", "")
-        self.private_key = os.getenv("FIREBASE_PRIVATE_KEY", "").replace("\\n", "\n")
-        self._token = None
-        self._token_expiry = 0
+    self.project_id = os.getenv("FIREBASE_PROJECT_ID", "")
+    self.database_url = os.getenv("FIREBASE_DATABASE_URL", "").rstrip("/")
+    self.client_email = os.getenv("FIREBASE_CLIENT_EMAIL", "")
+    
+    # Fix \n in private key — handles both formats
+    raw_key = os.getenv("FIREBASE_PRIVATE_KEY", "")
+    # If stored as literal \n replace with actual newlines
+    if "\\n" in raw_key:
+        self.private_key = raw_key.replace("\\n", "\n")
+    else:
+        self.private_key = raw_key
+    
+    self._token = None
+    self._token_expiry = 0
 
     def _get_access_token(self):
         """Get OAuth2 access token from service account"""
