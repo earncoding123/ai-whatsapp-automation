@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.trends.reddit_scraper import RedditScraper
 from scripts.trends.google_trends_scraper import GoogleTrendsScraper
 from scripts.ai.gemini_generator import GeminiContentGenerator
-from scripts.upload.cloudinary_uploader import CloudinaryUploader
+from scripts.upload.github_uploader import GitHubUploader
 from scripts.whatsapp.whapi_poster import WhapiPoster
 
 
@@ -29,7 +29,7 @@ class AutomationOrchestrator:
         self.reddit = RedditScraper()
         self.google_trends = GoogleTrendsScraper()
         self.content_gen = GeminiContentGenerator()
-        self.uploader = CloudinaryUploader()
+        self.uploader = GitHubUploader()
         self.poster = WhapiPoster()
         
         print("✅ All components initialized!\n")
