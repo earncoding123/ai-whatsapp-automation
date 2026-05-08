@@ -1,6 +1,6 @@
 """
-MAIN ORCHESTRATOR
-This script runs the entire automation pipeline
+MAIN ORCHESTRATOR — with Firebase integration
+Place at: scripts/main.py
 """
 
 import json
@@ -14,6 +14,7 @@ from scripts.trends.google_trends_scraper import GoogleTrendsScraper
 from scripts.ai.gemini_generator import GeminiContentGenerator
 from scripts.upload.github_uploader import GitHubUploader
 from scripts.whatsapp.whapi_poster import WhapiPoster
+from scripts.firebase_manager import FirebaseManager
 
 
 class AutomationOrchestrator:
@@ -27,6 +28,7 @@ class AutomationOrchestrator:
         self.content_gen = GeminiContentGenerator()
         self.uploader = GitHubUploader()
         self.poster = WhapiPoster()
+        self.firebase = FirebaseManager()
 
         print("✅ All components initialized!\n")
 
@@ -35,9 +37,9 @@ class AutomationOrchestrator:
             os.makedirs(self.data_dir)
 
     def step_1_scrape_trends(self):
-        print("="*60)
+        print("=" * 60)
         print("STEP 1: SCRAPING TRENDING TOPICS")
-        print("="*60 + "\n")
+        print("=" * 60 + "\n")
 
         print("📡 Scraping Google Trends...")
         google_summary, google_data = self.google_trends.get_comprehensive_trends()
@@ -54,16 +56,16 @@ class AutomationOrchestrator:
         return google_summary, trends_data
 
     def step_2_generate_content(self, trends_summary):
-        print("="*60)
-        print("STEP 2: GENERATING VIRAL CONTENT WITH GEMINI AI")
-        print("="*60 + "\n")
+        print("=" * 60)
+        print("STEP 2: GENERATING VIRAL CONTENT WITH GROQ AI")
+        print("=" * 60 + "\n")
 
-        print("🤖 Gemini is analyzing trends and creating content...")
+        print("🤖 Groq is analyzing trends and creating content...")
 
         content = self.content_gen.generate_viral_content(trends_summary)
 
         if not content:
-            raise Exception("Failed to generate content with Gemini")
+            raise Exception("Failed to generate content")
 
         with open(f'{self.data_dir}/generated_content.json', 'w') as f:
             json.dump(content, f, indent=2)
@@ -74,80 +76,95 @@ class AutomationOrchestrator:
 
         return content
 
-    def step_3_send_to_kaggle(self, content):
-        print("="*60)
-        print("STEP 3: PREPARING FOR KAGGLE IMAGE GENERATION")
-        print("="*60 + "\n")
+    def step_3_save_to_firebase(self, content):
+        print("=" * 60)
+        print("STEP 3: SAVING TO FIREBASE + KAGGLE INPUT")
+        print("=" * 60 + "\n")
 
+        # Save to Firebase
+        post_id = self.firebase.save_post(content)
+        if post_id:
+            print(f"✅ Saved to Firebase with ID: {post_id}")
+        else:
+            print("⚠️  Firebase save failed — continuing without Firebase")
+            post_id = f"post_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        # Also save kaggle_input.json for Kaggle notebook
         kaggle_input = {
+            'post_id': post_id,
             'positive_prompt': content['image_prompt'],
             'negative_prompt': content['negative_prompt'],
             'style': content['style'],
+            'viral_caption': content['viral_caption'],
+            'hashtags': content['hashtags'],
             'timestamp': datetime.now().isoformat()
         }
 
         with open(f'{self.data_dir}/kaggle_input.json', 'w') as f:
             json.dump(kaggle_input, f, indent=2)
 
-        print("✅ Kaggle input file created!")
-        print(f"📁 Location: {self.data_dir}/kaggle_input.json\n")
+        print(f"✅ Kaggle input saved: {self.data_dir}/kaggle_input.json\n")
+        return post_id, 'output/generated_image.png'
 
-        return 'output/generated_image.png'
-
-    def step_4_upload_image(self, image_path):
-        print("="*60)
-        print("STEP 4: UPLOADING IMAGE TO GITHUB CDN")
-        print("="*60 + "\n")
+    def step_4_upload_and_post(self, post_id, image_path, content):
+        print("=" * 60)
+        print("STEP 4: UPLOAD IMAGE + POST TO WHATSAPP")
+        print("=" * 60 + "\n")
 
         if not os.path.exists(image_path):
             print(f"⚠️  Image not found at: {image_path}")
+            print("   Run Kaggle notebook first to generate image!\n")
             return None
 
-        print("📤 Uploading to GitHub...")
-
+        # Upload to GitHub CDN
+        print("📤 Uploading to GitHub CDN...")
         result = self.uploader.upload_image(image_path)
 
         if not result['success']:
             raise Exception(f"Upload failed: {result.get('error')}")
 
-        print(f"\n✅ Image uploaded successfully!")
-        print(f"🔗 URL: {result['url']}\n")
+        image_url = result['url']
+        print(f"✅ Uploaded! URL: {image_url}\n")
 
-        return result['url']
+        # Update Firebase with image URL
+        self.firebase.update_post_image(post_id, image_url)
 
-    def step_5_post_to_whatsapp(self, image_url, content):
-        print("="*60)
-        print("STEP 5: POSTING TO WHATSAPP CHANNEL")
-        print("="*60 + "\n")
-
+        # Post to WhatsApp
         full_caption = f"{content['viral_caption']}\n\n{content['hashtags']}"
-
         print("📱 Posting to WhatsApp Channel...")
+        post_result = self.poster.post_to_channel(image_url, full_caption)
 
-        result = self.poster.post_to_channel(image_url, full_caption)
+        if post_result['success']:
+            self.firebase.mark_posted(post_id)
+            print(f"\n✅ Posted! Message ID: {post_result['message_id']}\n")
+        else:
+            print(f"❌ WhatsApp post failed: {post_result.get('error')}")
 
-        if not result['success']:
-            raise Exception(f"Posting failed: {result.get('error')}")
-
-        print(f"\n✅ Successfully posted to WhatsApp Channel!")
-        print(f"📨 Message ID: {result['message_id']}\n")
-
-        return result
+        return image_url
 
     def run_full_pipeline(self):
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("🚀 STARTING AI WHATSAPP AUTOMATION PIPELINE")
-        print("="*60 + "\n")
+        print("=" * 60 + "\n")
 
         try:
-            trends_summary, trends_data = self.step_1_scrape_trends()
+            # Step 1 — Scrape trends
+            trends_summary, _ = self.step_1_scrape_trends()
+
+            # Step 2 — Generate content
             content = self.step_2_generate_content(trends_summary)
-            expected_image_path = self.step_3_send_to_kaggle(content)
 
-            print("⏸️  PIPELINE PAUSED - Waiting for Kaggle image generation")
+            # Step 3 — Save to Firebase + Kaggle input
+            post_id, expected_image_path = self.step_3_save_to_firebase(content)
 
+            print("⏸️  PIPELINE PAUSED — Waiting for Kaggle image generation")
+            print(f"   Post ID: {post_id}")
+            print(f"   Check Firebase Admin Panel to see the pending post\n")
+
+            # Save state for continuation
             state = {
                 'step': 'waiting_for_kaggle',
+                'post_id': post_id,
                 'image_path': expected_image_path,
                 'content': content,
                 'timestamp': datetime.now().isoformat()
@@ -165,25 +182,22 @@ class AutomationOrchestrator:
             return None
 
     def continue_pipeline(self):
-        print("\n" + "="*60)
-        print("▶️  CONTINUING PIPELINE")
-        print("="*60 + "\n")
+        print("\n" + "=" * 60)
+        print("▶️  CONTINUING PIPELINE — Post image + WhatsApp")
+        print("=" * 60 + "\n")
 
         with open(f'{self.data_dir}/pipeline_state.json', 'r') as f:
             state = json.load(f)
 
         try:
-            image_url = self.step_4_upload_image(state['image_path'])
-
-            if not image_url:
-                print("❌ Image not found. Generate it on Kaggle first!")
-                return
-
-            result = self.step_5_post_to_whatsapp(image_url, state['content'])
-
-            print("\n" + "="*60)
+            self.step_4_upload_and_post(
+                state['post_id'],
+                state['image_path'],
+                state['content']
+            )
+            print("\n" + "=" * 60)
             print("🎉 PIPELINE COMPLETED SUCCESSFULLY!")
-            print("="*60 + "\n")
+            print("=" * 60 + "\n")
 
         except Exception as e:
             print(f"\n❌ CONTINUATION FAILED: {e}")
