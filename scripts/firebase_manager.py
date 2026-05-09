@@ -1,87 +1,37 @@
 """
-Firebase Manager — uses Admin SDK (service account)
-Place this file at: scripts/firebase_manager.py
+Firebase Manager — Simple REST API with Database Secret
+No JWT, no private key issues. Place at: scripts/firebase_manager.py
 """
 
-import json
 import os
-import time
 import requests
+from datetime import datetime
 
 
 class FirebaseManager:
     def __init__(self):
-        self.project_id = os.getenv("FIREBASE_PROJECT_ID", "")
         self.database_url = os.getenv("FIREBASE_DATABASE_URL", "").rstrip("/")
-        self.client_email = os.getenv("FIREBASE_CLIENT_EMAIL", "")
+        # Simple database secret — no JWT needed
+        self.db_secret = os.getenv("FIREBASE_DB_SECRET", "")
 
-        # Fix \n in private key — GitHub Secrets stores literal \n
-        raw_key = os.getenv("FIREBASE_PRIVATE_KEY", "")
-        if "\\n" in raw_key:
-            self.private_key = raw_key.replace("\\n", "\n")
-        else:
-            self.private_key = raw_key
-
-        self._token = None
-        self._token_expiry = 0
-
-    def _get_access_token(self):
-        """Get OAuth2 access token from service account"""
-        import jwt  # PyJWT
-
-        now = int(time.time())
-        if self._token and now < self._token_expiry - 60:
-            return self._token
-
-        payload = {
-            "iss": self.client_email,
-            "sub": self.client_email,
-            "aud": "https://oauth2.googleapis.com/token",
-            "iat": now,
-            "exp": now + 3600,
-            "scope": (
-                "https://www.googleapis.com/auth/firebase.database "
-                "https://www.googleapis.com/auth/userinfo.email"
-            )
-        }
-
-        try:
-            signed = jwt.encode(payload, self.private_key, algorithm="RS256")
-            r = requests.post(
-                "https://oauth2.googleapis.com/token",
-                data={
-                    "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-                    "assertion": signed
-                },
-                timeout=15
-            )
-            if r.status_code == 200:
-                data = r.json()
-                self._token = data["access_token"]
-                self._token_expiry = now + data.get("expires_in", 3600)
-                return self._token
-            else:
-                print(f"❌ Token error: {r.text}")
-                return None
-        except Exception as e:
-            print(f"❌ JWT error: {e}")
-            return None
+        if not self.database_url:
+            print("⚠️  FIREBASE_DATABASE_URL not set")
+        if not self.db_secret:
+            print("⚠️  FIREBASE_DB_SECRET not set")
 
     def _url(self, path):
-        return f"{self.database_url}/{path}.json"
+        """Build Firebase REST URL with auth"""
+        return f"{self.database_url}/{path}.json?auth={self.db_secret}"
 
-    def _headers(self):
-        token = self._get_access_token()
-        if not token:
-            return {}
-        return {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
+    def _is_configured(self):
+        return bool(self.database_url and self.db_secret)
 
     def save_post(self, content):
         """Save generated content to Firebase as a pending post"""
-        from datetime import datetime
+        if not self._is_configured():
+            print("⚠️  Firebase not configured — skipping save")
+            return None
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         post_id = f"post_{timestamp}"
 
@@ -101,14 +51,8 @@ class FirebaseManager:
         }
 
         try:
-            headers = self._headers()
-            if not headers:
-                print("⚠️  No auth token — skipping Firebase save")
-                return None
-
             r = requests.put(
                 self._url(f"posts/{post_id}"),
-                headers=headers,
                 json=post_data,
                 timeout=15
             )
@@ -124,12 +68,15 @@ class FirebaseManager:
 
     def update_post_image(self, post_id, image_url):
         """Update post with generated image URL"""
-        from datetime import datetime
+        if not self._is_configured():
+            return False
         try:
             r = requests.patch(
                 self._url(f"posts/{post_id}"),
-                headers=self._headers(),
-                json={"image_url": image_url, "status": "ready_to_post"},
+                json={
+                    "image_url": image_url,
+                    "status": "ready_to_post"
+                },
                 timeout=15
             )
             if r.status_code == 200:
@@ -142,11 +89,11 @@ class FirebaseManager:
 
     def mark_posted(self, post_id):
         """Mark post as successfully posted to WhatsApp"""
-        from datetime import datetime
+        if not self._is_configured():
+            return False
         try:
             r = requests.patch(
                 self._url(f"posts/{post_id}"),
-                headers=self._headers(),
                 json={
                     "status": "posted",
                     "posted_at": datetime.now().isoformat()
@@ -159,17 +106,16 @@ class FirebaseManager:
 
     def get_pending_posts(self):
         """Get posts waiting for image generation"""
+        if not self._is_configured():
+            return {}
         try:
-            r = requests.get(
-                self._url("posts"),
-                headers=self._headers(),
-                timeout=15
-            )
+            r = requests.get(self._url("posts"), timeout=15)
             if r.status_code == 200:
                 posts = r.json() or {}
                 return {
                     pid: p for pid, p in posts.items()
-                    if isinstance(p, dict) and p.get("status") == "pending_image"
+                    if isinstance(p, dict)
+                    and p.get("status") == "pending_image"
                 }
         except Exception as e:
             print(f"❌ Firebase fetch error: {e}")
@@ -177,12 +123,10 @@ class FirebaseManager:
 
     def get_ready_posts(self):
         """Get posts ready to post to WhatsApp"""
+        if not self._is_configured():
+            return {}
         try:
-            r = requests.get(
-                self._url("posts"),
-                headers=self._headers(),
-                timeout=15
-            )
+            r = requests.get(self._url("posts"), timeout=15)
             if r.status_code == 200:
                 posts = r.json() or {}
                 return {
@@ -196,13 +140,11 @@ class FirebaseManager:
         return {}
 
     def get_settings(self):
-        """Get automation settings from Firebase"""
+        """Get automation settings"""
+        if not self._is_configured():
+            return {"auto_post": True, "require_approval": False}
         try:
-            r = requests.get(
-                self._url("settings"),
-                headers=self._headers(),
-                timeout=15
-            )
+            r = requests.get(self._url("settings"), timeout=15)
             if r.status_code == 200:
                 return r.json() or {}
         except Exception:
