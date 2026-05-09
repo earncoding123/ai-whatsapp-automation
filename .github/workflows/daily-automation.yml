@@ -36,13 +36,49 @@ jobs:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GITHUB_REPO_NAME: ai-whatsapp-automation
-          FIREBASE_DB_SECRET: ${{ secrets.FIREBASE_DB_SECRET }}
           FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+          FIREBASE_DB_SECRET: ${{ secrets.FIREBASE_DB_SECRET }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          GITHUB_REPO_NAME: ai-whatsapp-automation
         run: |
           python scripts/main.py
 
-      - name: Upload Kaggle input as artifact
+      - name: Trigger Kaggle notebook via API
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          pip install kaggle -q
+          
+          # Create kaggle.json for authentication
+          mkdir -p ~/.kaggle
+          echo '{"username":"'"$KAGGLE_USERNAME"'","key":"'"$KAGGLE_KEY"'"}' > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+          
+          # Trigger the notebook to run
+          echo "Triggering Kaggle notebook..."
+          kaggle kernels output $KAGGLE_USERNAME/ai-whatsapp-image-generator --path /tmp/kaggle_check 2>/dev/null || true
+          
+          # Push a trigger file so Kaggle notebook knows to run
+          python -c "
+          import requests, json, os
+          
+          db_url = os.getenv('FIREBASE_DATABASE_URL', '').rstrip('/')
+          db_secret = os.getenv('FIREBASE_DB_SECRET', '')
+          
+          trigger_data = {
+            'triggered_at': __import__('datetime').datetime.now().isoformat(),
+            'status': 'requested'
+          }
+          
+          r = requests.put(
+            f'{db_url}/kaggle_trigger.json?auth={db_secret}',
+            json=trigger_data
+          )
+          print(f'Kaggle trigger saved to Firebase: {r.status_code}')
+          "
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: kaggle-input
